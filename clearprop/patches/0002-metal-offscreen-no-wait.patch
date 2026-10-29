@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ClearProp <vbvmalhotra@gmail.com>
+Date: Thu, 29 Oct 2026 14:18:18 -0700
+Subject: [PATCH 2/3] metal: do not block the CPU on offscreen passes
+
+OffscreenTexture::swap() committed its command buffer and called waitUntilCompleted, stalling the render thread once per hillshade tile (maplibre-native #4684). Commit without waiting and wait only in readStillImage(), which needs the pixels.
+---
+ src/mbgl/mtl/offscreen_texture.cpp | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/src/mbgl/mtl/offscreen_texture.cpp b/src/mbgl/mtl/offscreen_texture.cpp
+index 71f9fa0c92..3f7f88ee48 100644
+--- a/src/mbgl/mtl/offscreen_texture.cpp
++++ b/src/mbgl/mtl/offscreen_texture.cpp
+@@ -86,7 +86,10 @@ public:
+     void swap() override {
+         assert(commandBuffer);
+         commandBuffer->commit();
+-        commandBuffer->waitUntilCompleted();
++        // Don't block the CPU on every offscreen pass (maplibre-native #4684). Command buffers on the same queue run
++        // in commit order, so later passes that sample this texture still see the result. Only CPU readback has to
++        // wait, see readStillImage().
++        committedCommandBuffer = std::move(commandBuffer);
+         commandBuffer.reset();
+         renderPassDescriptor.reset();
+     }
+@@ -94,6 +97,11 @@ public:
+     PremultipliedImage readStillImage() {
+         assert(static_cast<Texture2D*>(colorTexture.get())->getMetalTexture());
+ 
++        if (committedCommandBuffer) {
++            committedCommandBuffer->waitUntilCompleted();
++            committedCommandBuffer.reset();
++        }
++
+         auto data = std::make_unique<uint8_t[]>(colorTexture->getDataSize());
+         MTL::Region region = MTL::Region::Make2D(0, 0, size.width, size.height);
+         NS::UInteger bytesPerRow = size.width * colorTexture->getPixelStride();
+@@ -129,6 +137,7 @@ private:
+     gfx::Texture2DPtr depthTexture;
+     gfx::Texture2DPtr stencilTexture;
+     MTLCommandBufferPtr commandBuffer;
++    MTLCommandBufferPtr committedCommandBuffer;
+     MTLRenderPassDescriptorPtr renderPassDescriptor;
+ };
+ 

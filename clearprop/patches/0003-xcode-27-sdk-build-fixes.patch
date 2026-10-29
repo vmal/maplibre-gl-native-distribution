@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: ClearProp <vbvmalhotra@gmail.com>
+Date: Thu, 29 Oct 2026 14:18:18 -0700
+Subject: [PATCH 3/3] ios: build with the Xcode 27 SDK
+
+Minimum iOS 15.1 in BUILD.bazel, drop the netinet6/in6.h include from MLNReachability, use std::nullopt in MLNMapSnapshotter and add an explicit enum cast in MLNMapView. No behaviour change.
+---
+ platform/darwin/src/MLNMapSnapshotter.mm | 5 +++--
+ platform/darwin/src/MLNReachability.m    | 1 -
+ platform/ios/BUILD.bazel                 | 2 +-
+ platform/ios/src/MLNMapView.mm           | 2 +-
+ 4 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/platform/darwin/src/MLNMapSnapshotter.mm b/platform/darwin/src/MLNMapSnapshotter.mm
+index 0798823527..284c07c6b4 100644
+--- a/platform/darwin/src/MLNMapSnapshotter.mm
++++ b/platform/darwin/src/MLNMapSnapshotter.mm
+@@ -892,8 +892,9 @@ NSArray<MLNAttributionInfo *> *MLNAttributionInfosFromAttributions(
+   }
+ 
+   // Create the snapshotter
+-  auto localFontFamilyName =
+-      config.localFontFamilyName ? std::string(config.localFontFamilyName.UTF8String) : nullptr;
++  auto localFontFamilyName = config.localFontFamilyName
++                                 ? std::optional<std::string>(config.localFontFamilyName.UTF8String)
++                                 : std::nullopt;
+   _delegateHost = std::make_unique<MLNMapSnapshotterDelegateHost>(self);
+   _mbglMapSnapshotter = std::make_unique<mbgl::MapSnapshotter>(
+       size, pixelRatio, resourceOptions, clientOptions, *_delegateHost, localFontFamilyName);
+diff --git a/platform/darwin/src/MLNReachability.m b/platform/darwin/src/MLNReachability.m
+index 6fd10d5279..ee41b1e263 100644
+--- a/platform/darwin/src/MLNReachability.m
++++ b/platform/darwin/src/MLNReachability.m
+@@ -29,7 +29,6 @@
+ 
+ #import <sys/socket.h>
+ #import <netinet/in.h>
+-#import <netinet6/in6.h>
+ #import <arpa/inet.h>
+ #import <ifaddrs.h>
+ #import <netdb.h>
+diff --git a/platform/ios/BUILD.bazel b/platform/ios/BUILD.bazel
+index a1aa24b220..c97703fe3f 100644
+--- a/platform/ios/BUILD.bazel
++++ b/platform/ios/BUILD.bazel
+@@ -156,7 +156,7 @@ apple_xcframework(
+         ],
+         "device": ["arm64"],
+     },
+-    minimum_os_versions = {"ios": "12.0"},
++    minimum_os_versions = {"ios": "15.1"},
+     public_hdrs = public_hdrs,
+     version = ":maplibre_ios_version",
+     visibility = ["//visibility:public"],
+diff --git a/platform/ios/src/MLNMapView.mm b/platform/ios/src/MLNMapView.mm
+index 67f019eea2..f4093165e0 100644
+--- a/platform/ios/src/MLNMapView.mm
++++ b/platform/ios/src/MLNMapView.mm
+@@ -6365,7 +6365,7 @@ static void *windowScreenContext = &windowScreenContext;
+       completionHandler:^{
+         MLNMapView *strongSelf = weakSelf;
+         if (strongSelf.userTrackingState == MLNUserTrackingStateBegan ||
+-            strongSelf.userTrackingState == MLNDistanceThresholdForCameraPause) {
++            static_cast<CLLocationDistance>(strongSelf.userTrackingState) == MLNDistanceThresholdForCameraPause) {
+           strongSelf.userTrackingState = MLNUserTrackingStateChanged;
+         }
+         if (completion) {
